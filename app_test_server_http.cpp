@@ -209,7 +209,7 @@ int app_test_server_http::app_test_server_http_send_file(app_test_http_data_t *a
 
 	//上一次的没有发送完成，继续发送
 	if(atud->send_data->message_block_get_data_len() > 0){
-		ret = atud->http->app_test_server_http_check_send(atud);
+		ret = app_test_server_http_check_send(atud);
 		if(ret < 0){
 			return -1;
 		}else if (ret > 0){
@@ -224,7 +224,7 @@ int app_test_server_http::app_test_server_http_send_file(app_test_http_data_t *a
 	}
 	//发的太快最多多发15s数据
 	if(!atud->is_m3u8_file && 
-		atud->http->app_test_server_http_check_send_too_fast(&atud->file_pcr_info,now_ms)){
+		app_test_server_http_check_send_too_fast(&atud->file_pcr_info,now_ms)){
 		return 0;
 	}
 
@@ -249,7 +249,7 @@ int app_test_server_http::app_test_server_http_send_file(app_test_http_data_t *a
 		if(!atud->is_m3u8_file){
 			unsigned int content_ms = atud->ts->ts_parser_get_last_pcr_ms((char *)atud->send_data->message_block_get_rd_ptr(),len);
 			if(content_ms != 0){
-				atud->http->app_test_server_http_updata_file_pcr(&atud->file_pcr_info,content_ms,now_ms);
+				app_test_server_http_updata_file_pcr(&atud->file_pcr_info,content_ms,now_ms);
 				if(atud->first_pcr == 0 || atud->first_pcr > content_ms){
 					atud->first_pcr = content_ms;
 				}
@@ -272,7 +272,7 @@ int app_test_server_http::app_test_server_http_send_file(app_test_http_data_t *a
 		atud->file_cur += len;
 	}
 	//发送文件数据
-	if(atud->http->app_test_server_http_check_send(atud) < 0){
+	if(app_test_server_http_check_send(atud) < 0){
 		return -1;
 	}
 
@@ -303,7 +303,7 @@ int app_test_server_http::app_test_server_http_play_ts(app_test_http_data_t *atu
 	const char *hls_ts = atud->parser_url->url_parser_get_value_byname("file_hls_ts");
 
 	//获取文件路径
-	atud->http->app_test_server_http_get_content_path(atud,play_path);
+	app_test_server_http_get_content_path(atud,play_path);
 	user_log_printf("ts path:%s\n",play_path.c_str());
 	//打开文件
 	atud->file_id = file_open(play_path.c_str(), O_RDONLY, FILE_PERMS_ALL,NULL);
@@ -348,7 +348,7 @@ int app_test_server_http::app_test_server_http_play_ts(app_test_http_data_t *atu
 	atud->http_req->head_parser_build_packet((char *)atud->send_data->message_block_get_wr_ptr(),&len);
 	atud->send_data->message_block_wr_pos_add(len);
 	user_log_printf("start play ts!!!:%.*s\n",len,atud->send_data->message_block_get_rd_ptr());
-	if(atud->http->app_test_server_http_check_send(atud) < 0){
+	if(app_test_server_http_check_send(atud) < 0){
 		return -1;
 	}
 	atud->state = APP_TEST_SERVER_HTTP_SEND_FILE;
@@ -361,12 +361,12 @@ int app_test_server_http::app_test_server_http_play_ts(app_test_http_data_t *atu
 int app_test_server_http::app_test_server_http_play_m3u8(app_test_http_data_t *atud){
 	string play_path;
 
-	atud->http->app_test_server_http_get_content_path(atud,play_path);
+	app_test_server_http_get_content_path(atud,play_path);
 	user_log_printf("m3u8 path:%s\n",play_path.c_str());
 	//尝试打开hls文件
 	atud->file_id = file_open(play_path.c_str(), O_RDONLY, FILE_PERMS_ALL,NULL);
 	if(atud->file_id != INVALID_HANDLE_VALUE){
-		return atud->http->app_test_server_http_play_m3u8_hls_file(atud);
+		return app_test_server_http_play_m3u8_hls_file(atud);
 	}
 	
 	//文件不存在，判断.ts是否存在？
@@ -377,7 +377,7 @@ int app_test_server_http::app_test_server_http_play_m3u8(app_test_http_data_t *a
 	if(atud->file_id == INVALID_HANDLE_VALUE){
 		return -1;
 	}else{
-		return atud->http->app_test_server_http_play_m3u8_ts_file(atud,ts_path);
+		return app_test_server_http_play_m3u8_ts_file(atud,ts_path);
 	}
 	return -1;
 }
@@ -400,7 +400,7 @@ int app_test_server_http::app_test_server_http_play_m3u8_hls_file(app_test_http_
 	atud->http_req->head_parser_build_packet((char *)atud->send_data->message_block_get_wr_ptr(),&len);
 	atud->send_data->message_block_wr_pos_add(len);
 	user_log_printf("start play m3u8!!!:%.*s\n",len,atud->send_data->message_block_get_rd_ptr());
-	if(atud->http->app_test_server_http_check_send(atud) < 0){
+	if(app_test_server_http_check_send(atud) < 0){
 		return -1;
 	}
 	atud->is_m3u8_file = 1;
@@ -419,7 +419,7 @@ int app_test_server_http::app_test_server_http_play_m3u8_ts_file(app_test_http_d
 	string m3u8_path = replace_all(path,(string)"ts",(string)"m3u8");
 
 	//生成hls索引文件
-	ret = atud->http->app_test_server_http_play_m3u8_build_hls_file(atud,ts_url,m3u8_path);
+	ret = app_test_server_http_play_m3u8_build_hls_file(atud,ts_url,m3u8_path);
 	if(ret != 0){
 		return -1;
 	}
@@ -575,9 +575,9 @@ int app_test_server_http::app_test_server_http_display_mode(app_test_http_data_t
 	user_log_printf("path2:%s\n",path);
 	//m3u8文件
 	if(strstr(path,"m3u8") != NULL){
-		return atud->http->app_test_server_http_play_m3u8(atud);
+		return app_test_server_http_play_m3u8(atud);
 	}else if(strstr(path,"ts") != NULL){//ts文件
-		return atud->http->app_test_server_http_play_ts(atud);
+		return app_test_server_http_play_ts(atud);
 	}else{
 		return -1;
 	}
@@ -588,12 +588,12 @@ int app_test_server_http::app_test_server_http_display_mode(app_test_http_data_t
 ***************************************************************/
 int app_test_server_http::app_test_server_http_process(app_test_http_data_t *atud){
 	const char *path = atud->parser_url->url_parser_get_path(1);
-	atud->http->app_test_server_http_init_req(atud);
+	app_test_server_http_init_req(atud);
 
 	user_log_printf("path1:%s\n",path);
 	//play命令，可扩展
 	if(strncmp(path,"play",4) == 0){
-		return atud->http->app_test_server_http_display_mode(atud);
+		return app_test_server_http_display_mode(atud);
 	}else{
 		return -1;
 	}
@@ -609,13 +609,16 @@ void app_test_server_http::app_test_server_http_event_cb(struct event_connection
 	if(event_task == EVENT_READ){
 		if(ec->s != NULL){
 			ret = ec->s->Receive(atud->recv_data->message_block_get_wr_ptr(),atud->recv_data->message_block_get_space());
-
-			if(ret > 0){
-				atud->recv_data->message_block_wr_pos_add(ret);
-				user_log_printf("http user request:%.*s\n",
-					atud->recv_data->message_block_get_data_len(),atud->recv_data->message_block_get_rd_ptr());
-			}else{
+			if(ret == 0){
 				atud->state = APP_TEST_SERVER_HTTP_ERROR;
+			}else if(ret < 0){
+				if(get_errno() != EWOULDBLOCK && get_errno() != EINPROGRESS){
+					atud->state = APP_TEST_SERVER_HTTP_ERROR;
+					user_log_printf("recv error:%d\n",get_errno());
+				}
+			}else{
+				atud->recv_data->message_block_wr_pos_add(ret);
+				user_log_printf("rtsp user request:%.*s\n",ret,atud->recv_data->message_block_get_rd_ptr());
 			}
 		}
 	}

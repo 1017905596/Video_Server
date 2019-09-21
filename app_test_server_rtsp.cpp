@@ -570,8 +570,6 @@ CSeq: 3
 Session: 1740948824
 Date: 2019-09-06 03:57:2
 Content-Type: application/sdp
-x-Burst: yes
-x-Retrans: no
 Timeshift-Status: 0
 Content-Length: 204
 
@@ -614,8 +612,6 @@ int app_test_server_rtsp::app_test_server_rtsp_process_describe(app_test_rtsp_da
 	
 	atud->rtsp_req->head_parser_set_headers("Content-Type","application/sdp");
 	atud->rtsp_req->head_parser_set_headers("Cache-Control","no-cache");
-	//atud->rtsp_req->head_parser_set_headers("x-Retrans","no");
-	//atud->rtsp_req->head_parser_set_headers("Timeshift-Status","0");
 
 	gettimeofday( &tv );
 	snprintf( session_own1,sizeof(session_own1),"%d%d", (int)(tv.sec), (int)(tv.usec));
@@ -848,7 +844,7 @@ int app_test_server_rtsp::app_test_server_rtsp_process(app_test_rtsp_data_t *atu
 	}else if(strcmp(method,"SET_PARAMETER") == 0){
 		return app_test_server_rtsp_process_setparameter(atud);
 	}
-	user_log_printf("CMD error:%s\n",method);
+	user_log_printf("Cmd error:%s\n",method);
 	return app_test_server_rtsp_do_rep_cmd(atud,"200","OK");
 }
 

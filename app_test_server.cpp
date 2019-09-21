@@ -2,6 +2,7 @@
 
 static app_test_server_http *http_buf[MAX_CONNECT_LEN];
 static app_test_server_rtsp *rtsp_buf[MAX_CONNECT_LEN];
+static app_test_server_rtmp *rtmp_buf[MAX_CONNECT_LEN];
 static app_test_server_state_t last_state;
 
 app_test_server::app_test_server(){
@@ -26,6 +27,15 @@ void app_test_server::app_test_server_destroy_mod_rtsp(app_test_server_rtsp *rts
 		}
 	}
 }
+void app_test_server::app_test_server_destroy_mod_rtmp(app_test_server_rtmp *rtmp){
+	last_state = APP_TEST_SERVER_MOD_END;
+	for(int i = 0; i < MAX_CONNECT_LEN; i++){
+		if(rtmp_buf[i] == NULL){
+			rtmp_buf[i] = rtmp;
+			return ;
+		}
+	}
+}
 Dthr_ret WINAPI app_test_server::app_test_server_thread(LPVOID lParam){
 	while(1){
 		if(last_state ==  APP_TEST_SERVER_MOD_END){
@@ -38,8 +48,10 @@ Dthr_ret WINAPI app_test_server::app_test_server_thread(LPVOID lParam){
 					user_log_printf("free rtsp:%p\n",rtsp_buf[i]);
 					delete rtsp_buf[i];
 					rtsp_buf[i] = NULL;
-				}else{
-					break;
+				}else if(rtmp_buf[i] != NULL){
+					user_log_printf("free rtmp:%p\n",rtmp_buf[i]);
+					delete rtmp_buf[i];
+					rtmp_buf[i] = NULL;
 				}
 			}
 			last_state = APP_TEST_SERVER_ERROR;
@@ -77,8 +89,8 @@ void app_test_server::app_test_server_impl_detach(app_test_user_data_t *atud){
 int app_test_server::app_test_server_process(app_test_user_data_t *atud){
 	char *version = (char *)atud->recv_data->message_block_get_rd_ptr();
 	if(strstr(version,"RTSP") != NULL){
+		user_log_printf("start RTSP play\n");
 		atud->rtsp = new app_test_server_rtsp(app_test_server_destroy_mod_rtsp,atud->ec,version,atud->recv_data->message_block_get_data_len());
-		user_log_printf("malloc atud->rtsp:%p\n",atud->rtsp);
 		int ret = atud->rtsp->app_test_server_rtsp_impl_run();
 		if(ret == 0){
 			atud->ats->app_test_server_impl_detach(atud);
@@ -88,13 +100,24 @@ int app_test_server::app_test_server_process(app_test_user_data_t *atud){
 			atud->state = APP_TEST_SERVER_ERROR;
 		}
 	}else if(strstr(version,"HTTP") != NULL){
+		user_log_printf("start HTTP play\n");
 		atud->http = new app_test_server_http(app_test_server_destroy_mod_http,atud->ec,version,atud->recv_data->message_block_get_data_len());
-		user_log_printf("malloc atud->http:%p\n",atud->http);
 		int ret = atud->http->app_test_server_http_impl_run();
 		if(ret == 0){
 			atud->ats->app_test_server_impl_detach(atud);
 			atud->state = APP_TEST_SERVER_END;
 			user_log_printf("goto http server play\n");
+		}else{
+			atud->state = APP_TEST_SERVER_ERROR;
+		}
+	}else if(version[0] == 0x03 && atud->recv_data->message_block_get_data_len() == 1537){
+		user_log_printf("start rtmp play\n");
+		atud->rtmp = new app_test_server_rtmp(app_test_server_destroy_mod_rtmp,atud->ec,version,atud->recv_data->message_block_get_data_len());
+		int ret = atud->rtmp->app_test_server_rtmp_impl_run();
+		if(ret == 0){
+			atud->ats->app_test_server_impl_detach(atud);
+			atud->state = APP_TEST_SERVER_END;
+			user_log_printf("goto rtmp server play\n");
 		}else{
 			atud->state = APP_TEST_SERVER_ERROR;
 		}
@@ -214,6 +237,7 @@ int app_test_server::app_test_server_init(){
 		return -1;
 	}
 	test_server.el->event_listener_add_listen(7000);
+	test_server.el->event_listener_add_listen(1935);
 	user_log_printf("start listening \n");
 
 	thread = new CPthread();

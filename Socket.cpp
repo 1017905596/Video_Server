@@ -105,7 +105,7 @@ int Socket::Accept(){
 	Addr.sin_family = AF_INET;
 	int ret = accept(m_nSocket,(struct sockaddr *)&Addr, &nAddrLen);
 	if(ret != -1){
-		client_ip.c_str();
+		client_ip.clear();
 		client_ip.append(inet_ntoa(Addr.sin_addr));
 		user_log_printf("client:ip:%s,port:%d\n",client_ip.c_str(),ntohs(Addr.sin_port));
 	}

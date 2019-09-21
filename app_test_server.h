@@ -3,6 +3,7 @@
 
 #include "app_test_server_http.h"
 #include "app_test_server_rtsp.h"
+#include "app_test_server_rtmp.h"
 #include "event_listener.h"
 #include "event_server.h"
 #include "message_block.h"
@@ -25,6 +26,7 @@ typedef struct app_test_user_data_s{
 	Socket *s; //客户端套接字
 	app_test_server_http *http;
 	app_test_server_rtsp *rtsp;
+	app_test_server_rtmp *rtmp;
 	app_test_server_state_t state;//当前状态
 	message_block *recv_data;
 }app_test_user_data_t;
@@ -44,6 +46,7 @@ public:
 	int app_test_server_begin_thread();
 private:
 	//设置需要释放的http对象
+	static void app_test_server_destroy_mod_rtmp(app_test_server_rtmp *rtmp);
 	static void app_test_server_destroy_mod_rtsp(app_test_server_rtsp *rtsp);
 	static void app_test_server_destroy_mod_http(app_test_server_http *http);
 	int app_test_server_process(app_test_user_data_t *atud);
