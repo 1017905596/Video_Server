@@ -30,6 +30,7 @@ typedef struct rtmp_chunk_info_s{
 	unsigned int message_size;
 	unsigned int last_message_size;
 	unsigned int message_type;
+	unsigned int time_stamp_delta;
 	unsigned int time_stamp;
 	message_block *chunk_data;
 }rtmp_chunk_info_t;
@@ -65,8 +66,6 @@ typedef struct app_test_rtmp_data_s{
 	
 	unsigned int client_chunk_size;
 	unsigned int server_chunk_size;
-	unsigned int rtmp_last_video_timestamp;
-	unsigned int rtmp_last_audio_timestamp;
 	rtmp_chunk_info_t chunk_info[64];
 }app_test_rtmp_data_t;
 

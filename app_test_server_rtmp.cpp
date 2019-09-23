@@ -669,20 +669,13 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 							message_buf[15];
 				chunk_header_len += 4;
 			}
-			//记录上一次timestamp
-			if(chunk_info_back.message_type == 0x08){
-				atud->rtmp_last_audio_timestamp = chunk_info_back.time_stamp;
-			}else if(chunk_info_back.message_type == 0x09){
-				atud->rtmp_last_video_timestamp = chunk_info_back.time_stamp;
-				user_log_printf("recv message_type:%u\n",atud->rtmp_last_video_timestamp);
-			}
 			break;
 		case 1:
 			chunk_header_len = 8;
 			if(message_len < chunk_header_len){
 				return 0;
 			}
-			chunk_info_back.time_stamp = \
+			chunk_info_back.time_stamp_delta = \
 							(((unsigned int)(message_buf[1]))<<16) + \
 							(((unsigned int)(message_buf[2]))<<8) + \
 							message_buf[3];
@@ -692,26 +685,17 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 							message_buf[6];
 			chunk_info_back.message_type = message_buf[7];
 			//扩展
-			if(chunk_info_back.time_stamp == 0xffffff){
+			if(chunk_info_back.time_stamp_delta == 0xffffff){
 				 if(message_len < chunk_header_len + 5){
                       return 1;
                  }
 
-				chunk_info_back.time_stamp = \
+				chunk_info_back.time_stamp_delta = \
 							(((unsigned int)(message_buf[8]))<<24) + \
 							(((unsigned int)(message_buf[9]))<<16) + \
 							(((unsigned int)(message_buf[10]))<<8) + \
 							message_buf[11];
 				chunk_header_len += 4;
-			}
-			//记录上一次timestamp
-			if(chunk_info_back.message_type == 0x08){
-				chunk_info_back.time_stamp += atud->rtmp_last_audio_timestamp;
-				atud->rtmp_last_audio_timestamp = chunk_info_back.time_stamp;
-			}else if(chunk_info_back.message_type == 0x09){
-				chunk_info_back.time_stamp += atud->rtmp_last_video_timestamp;
-				atud->rtmp_last_video_timestamp = chunk_info_back.time_stamp;
-				user_log_printf("recv message_type:%u\n",atud->rtmp_last_video_timestamp);
 			}
 			break;
 		case 2:
@@ -719,30 +703,22 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 			if(message_len < chunk_header_len){
 				return 0;
 			}
-			chunk_info_back.time_stamp = \
+			chunk_info_back.time_stamp_delta = \
 							(((unsigned int)(message_buf[1]))<<16) + \
 							(((unsigned int)(message_buf[2]))<<8) + \
 							message_buf[3];
 			//扩展
-			if(chunk_info_back.time_stamp == 0xffffff){
+			if(chunk_info_back.time_stamp_delta == 0xffffff){
 				 if(message_len < chunk_header_len + 5){
                       return 1;
                  }
 
-				chunk_info_back.time_stamp = \
+				chunk_info_back.time_stamp_delta = \
 							(((unsigned int)(message_buf[4]))<<24) + \
 							(((unsigned int)(message_buf[5]))<<16) + \
 							(((unsigned int)(message_buf[6]))<<8) + \
 							message_buf[7];
 				chunk_header_len += 4;
-			}
-			//记录上一次timestamp
-			if(chunk_info_back.message_type == 0x08){
-				chunk_info_back.time_stamp += atud->rtmp_last_audio_timestamp;
-				atud->rtmp_last_audio_timestamp = chunk_info_back.time_stamp;
-			}else if(chunk_info_back.message_type == 0x09){
-				chunk_info_back.time_stamp += atud->rtmp_last_video_timestamp;
-				atud->rtmp_last_video_timestamp = chunk_info_back.time_stamp;
 			}
 			break;
 		case 3:
@@ -758,6 +734,20 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 	//chunk包分类
 	if(atud->chunk_info[chunk_id].last_message_size == 0){
 		is_new_pack = 1;
+		if(chunk_info_back.message_size == 0){
+			if(fmt == 2){
+				chunk_info_back.message_size = atud->chunk_info[chunk_id].message_size;
+				chunk_info_back.message_type = atud->chunk_info[chunk_id].message_type;
+			}else if(fmt == 3){
+				chunk_info_back.message_size = atud->chunk_info[chunk_id].message_size;
+				chunk_info_back.message_type = atud->chunk_info[chunk_id].message_type;
+				chunk_info_back.time_stamp_delta = atud->chunk_info[chunk_id].time_stamp_delta;
+			}else{
+				user_log_printf("recv fmt:%d message len:%u,is error\n",fmt,message_len);
+				atud->recv_data->message_block_rd_pos_add(message_len);
+				return 0;
+			}
+		}
 		chunk_len = MIN(chunk_info_back.message_size,atud->client_chunk_size);
 	}else{
 		chunk_len = MIN(atud->chunk_info[chunk_id].last_message_size,atud->client_chunk_size);
@@ -773,15 +763,16 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 			atud->chunk_info[chunk_id].chunk_data = NULL;
 		}
 
-		if(chunk_info_back.message_size == 0){
-			user_log_printf("recv fmt:%d,message_len:%d,client is error\n",fmt,message_len);
-			atud->recv_data->message_block_rd_pos_add(message_len);
-			return 0;
-		}
 		atud->chunk_info[chunk_id].last_message_size = chunk_info_back.message_size;
 		atud->chunk_info[chunk_id].message_size = chunk_info_back.message_size;
 		atud->chunk_info[chunk_id].message_type = chunk_info_back.message_type;
-		atud->chunk_info[chunk_id].time_stamp = chunk_info_back.time_stamp;
+		if(chunk_info_back.time_stamp != 0){
+			atud->chunk_info[chunk_id].time_stamp = chunk_info_back.time_stamp;
+		}else if(chunk_info_back.time_stamp_delta != 0){
+			atud->chunk_info[chunk_id].time_stamp += chunk_info_back.time_stamp_delta;
+		}
+		atud->chunk_info[chunk_id].time_stamp_delta = chunk_info_back.time_stamp_delta;
+
 		atud->chunk_info[chunk_id].chunk_data = new message_block((chunk_info_back.message_size + 64*1024)/(64*1024)*(64*1024));
 	}
 	
@@ -807,8 +798,11 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_process(app_test_rtmp_data
 	switch(info->message_type){
 		// Set Chunk Size (0x01)
 		case 0x01:
-			atud->client_chunk_size = (((unsigned int)(messsge_data[0]))<<24) + (((unsigned int)(messsge_data[1]))<<16)
-									+ (((unsigned int)(messsge_data[2]))<<8) + messsge_data[3];
+			atud->client_chunk_size = \
+						(((unsigned int)(messsge_data[0]))<<24) + \
+						(((unsigned int)(messsge_data[1]))<<16) + \
+						(((unsigned int)(messsge_data[2]))<<8) + \
+						messsge_data[3];
 			break;
 		//Audio Data (0x08)
 		case 0x08:
@@ -821,8 +815,9 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_process(app_test_rtmp_data
 		//AMF0 Data (0x12)
 		case 0x12:
 			if(atud->state == APP_TEST_SERVER_RTMP_FILE_RECV_START){
-				app_test_server_rtmp_parser_publish_dataframe(atud,info);
-				ret = app_test_server_rtmp_write_flv_framedata(atud);
+				if(app_test_server_rtmp_parser_publish_dataframe(atud,info) == 0){
+					ret = app_test_server_rtmp_write_flv_framedata(atud);
+				}
 			}
 			break;
 		//AMF0 Command (0x14)
@@ -872,6 +867,7 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_process_cmd_14(app_test_rt
 				return app_test_server_rtmp_publish(atud);
 			}
 			break;
+		case APP_TEST_SERVER_RTMP_FILE_RECV:
 		case APP_TEST_SERVER_RTMP_FILE_SEND:
 			if(strcmp(command_name,"deleteStream") == 0){
 				atud->state = APP_TEST_SERVER_RTMP_FILE_END;
@@ -952,6 +948,11 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_connect(app_test_rtmp_data
 	}
 	return 0;
 }
+/*
+String 'createStream'
+Number 4
+Null
+*/
 int app_test_server_rtmp::app_test_server_rtmp_parser_createstream(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
 	int ret = 0;
 	char command_name[256]={0};
@@ -1083,7 +1084,33 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_publish(app_test_rtmp_data
 	user_log_printf("rtmp_stream:%s\n",prop_value);
 	return 0;
 }
-
+/*
+String '@setDataFrame'
+String 'onMetaData'
+ECMA array (19 items)
+    AMF0 type: ECMA array (0x08)
+    Array length: 19
+    Property 'duration' Number 0
+    Property 'width' Number 480
+    Property 'height' Number 270
+    Property 'videodatarate' Number 781
+    Property 'framerate' Number 25
+    Property 'videocodecid' Number 7
+    Property 'audiodatarate' Number 31
+    Property 'audiosamplerate' Number 48000
+    Property 'audiosamplesize' Number 16
+    Property 'stereo' Boolean true
+    Property 'audiocodecid' Number 10
+    Property 'Server' String 'NGINX RTMP (github.com/arut/nginx-rtmp-module)'
+    Property 'displayWidth' String '480'
+    Property 'displayHeight' String '270'
+    Property 'fps' String '25'
+    Property 'profile' String ''
+    Property 'level' String ''
+    Property 'encoder' String 'Lavf58.30.100'
+    Property 'filesize' Number 0
+    End Of Object Marker
+*/
 int app_test_server_rtmp::app_test_server_rtmp_parser_publish_dataframe(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
 	unsigned char *messsge_data = info->chunk_data->message_block_get_rd_ptr();
 	int data_len = info->chunk_data->message_block_get_data_len();
@@ -1106,8 +1133,6 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_publish_dataframe(app_test
 
 	return 0;
 }
-
-
 
 /***************************************************************
 //处理rtmp信令
