@@ -22,12 +22,15 @@ typedef enum rtmp_state_s{
 	APP_TEST_SERVER_RTMP_FILE_START,//处理
 	APP_TEST_SERVER_RTMP_FILE_SEND,
 	APP_TEST_SERVER_RTMP_FILE_END,
+	APP_TEST_SERVER_RTMP_FILE_RECV_START,
+	APP_TEST_SERVER_RTMP_FILE_RECV,
 }rtmp_state_t;
 
 typedef struct rtmp_chunk_info_s{
 	unsigned int message_size;
 	unsigned int last_message_size;
 	unsigned int message_type;
+	unsigned int time_stamp;
 	message_block *chunk_data;
 }rtmp_chunk_info_t;
 
@@ -47,6 +50,7 @@ typedef struct app_test_rtmp_data_s{
 	message_block *recv_data;
 	message_block *send_data;
 
+	//文件相关
 	HANDLE file_id;
 	DWORD file_len;
 	DWORD file_cur;
@@ -56,11 +60,13 @@ typedef struct app_test_rtmp_data_s{
 	int video_time_add;
 	double audio_time_add;
 	flv_metadata_info_t flv_metadata;
-
 	char flv_info[512];
 	int flv_info_len;
+	
 	unsigned int client_chunk_size;
 	unsigned int server_chunk_size;
+	unsigned int rtmp_last_video_timestamp;
+	unsigned int rtmp_last_audio_timestamp;
 	rtmp_chunk_info_t chunk_info[64];
 }app_test_rtmp_data_t;
 
@@ -76,6 +82,8 @@ private:
 	int app_test_server_rtmp_onmetadata_result(app_test_rtmp_data_t * atud);
 	int app_test_server_rtmp_parser_data_info(app_test_rtmp_data_t *atud);
 	int app_test_server_rtmp_process_data(app_test_rtmp_data_t *atud);
+	int app_test_server_rtmp_write_flv_framedata(app_test_rtmp_data_t *atud);
+	int app_test_server_rtmp_write_flv(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
 	//设置需要使用的参数
 	int app_test_server_rtmp_set_bandwidth(char *pag_buf,int pag_len);
 	int app_test_server_rtmp_set_win_ack(char *pag_buf,int pag_len);
@@ -87,15 +95,20 @@ private:
 	int app_test_server_rtmp_play_onstatus_stream_start(char *pag_buf,int pag_len);
 	int app_test_server_rtmp_play_rtmpsampleaccess(char *pag_buf,int pag_len);
 	int app_test_server_rtmp_play_onstatus_data_start(char *pag_buf,int pag_len);
+	int app_test_server_rtmp_publish_result(char *pag_buf,int pag_len);
 	
 	//解析
 	int app_test_server_rtmp_parser_message(app_test_rtmp_data_t *atud);
 	int app_test_server_rtmp_parser_process(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
-	int app_test_server_rtmp_parser_process_cmd(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
+	int app_test_server_rtmp_parser_process_cmd_14(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
 	int app_test_server_rtmp_parser_connect(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
+	int app_test_server_rtmp_parser_createstream(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
 	int app_test_server_rtmp_parser_play(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
+	int app_test_server_rtmp_parser_publish(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
+	int app_test_server_rtmp_parser_publish_dataframe(app_test_rtmp_data_t *atud,rtmp_chunk_info_t *info);
 	//响应
 	int app_test_server_rtmp_onmetadata(app_test_rtmp_data_t *atud);
+	int app_test_server_rtmp_publish(app_test_rtmp_data_t *atud);
 	int app_test_server_rtmp_play(app_test_rtmp_data_t *atud);
 	int app_test_server_rtmp_create_stream(app_test_rtmp_data_t *atud);
 	int app_test_server_rtmp_connect(app_test_rtmp_data_t *atud);
@@ -111,5 +124,7 @@ private:
 	rtmp_amf0 amf0_process;
 	string rtmp_app;
 	string rtmp_stream;
+
+	double now_trans_id;
 };
 #endif

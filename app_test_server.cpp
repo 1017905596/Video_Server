@@ -155,6 +155,7 @@ void app_test_server::app_test_server_event_cb(struct event_connection_s *ec, in
 			
 			if(ret > 0){
 				atud->recv_data->message_block_wr_pos_add(ret);
+				user_log_printf("data len:%d\n",atud->recv_data->message_block_get_data_len());
 				user_log_printf("recv new user request:%.*s\n",
 					atud->recv_data->message_block_get_data_len(),atud->recv_data->message_block_get_rd_ptr());
 			}else{

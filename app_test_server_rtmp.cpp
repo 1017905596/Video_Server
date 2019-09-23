@@ -4,6 +4,7 @@
 //
 ***************************************************************/
 app_test_server_rtmp::app_test_server_rtmp(destroy_rtmp_cb_t cb,event_connection_t *ec,char *message,int len){
+	now_trans_id = 0.0;
 	memset(&app_test_rtmp,0,sizeof(app_test_rtmp_data_t));
 	app_test_rtmp.destroy_cb = cb;
 	app_test_rtmp.rtmp = this;
@@ -53,6 +54,9 @@ void app_test_server_rtmp::app_test_server_rtmp_clean(app_test_rtmp_data_t *atud
 		if(atud->send_data != NULL){
 			delete atud->send_data;
 			atud->send_data = NULL;
+		}
+		if(atud->file_id != INVALID_HANDLE_VALUE){
+			file_close(atud->file_id);
 		}
 		if(atud->destroy_cb != NULL){
 			atud->destroy_cb(this);
@@ -212,7 +216,7 @@ int app_test_server_rtmp::app_test_server_rtmp_connect_result(char *pag_buf,int 
 	amf0_ret = amf0_process.rtmp_amf0_push_string(data_ptr,data_end-data_ptr,"_result");
 	data_ptr += amf0_ret;
 	//Number 1 
-	amf0_ret = amf0_process.rtmp_amf0_push_number(data_ptr,data_end-data_ptr,1);
+	amf0_ret = amf0_process.rtmp_amf0_push_number(data_ptr,data_end-data_ptr,now_trans_id);
 	data_ptr += amf0_ret;
 	//object header
 	amf0_ret = amf0_process.rtmp_amf0_push_object_header(data_ptr,data_end-data_ptr);
@@ -295,7 +299,7 @@ int app_test_server_rtmp::app_test_server_rtmp_create_stream_result(char *pag_bu
 	amf0_ret = amf0_process.rtmp_amf0_push_string(data_ptr,data_end-data_ptr,"_result");
 	data_ptr += amf0_ret;
 	//Number 2 
-	amf0_ret = amf0_process.rtmp_amf0_push_number(data_ptr,data_end-data_ptr,2);
+	amf0_ret = amf0_process.rtmp_amf0_push_number(data_ptr,data_end-data_ptr,now_trans_id);
 	data_ptr += amf0_ret;
 	//null
 	amf0_ret = amf0_process.rtmp_amf0_push_null(data_ptr,data_end-data_ptr);
@@ -512,6 +516,67 @@ int app_test_server_rtmp::app_test_server_rtmp_play_onstatus_data_start(char *pa
 	return data_ptr - pag_buf;
 }
 
+int app_test_server_rtmp::app_test_server_rtmp_publish_result(char *pag_buf,int pag_len){
+	int message_len = 0;
+	int  amf0_ret = 0;
+	const char header_len = 12;
+	char *data_ptr = pag_buf;
+	char *data_end = pag_buf + pag_len;
+
+	//fmt 2 1个字节
+	*data_ptr = 0x05;
+	data_ptr ++;
+	//timestamp 3个字节
+	data_ptr += 3;
+	//size 
+	data_ptr += 3;
+	//type id 
+	*data_ptr = 0x14;
+	data_ptr ++;
+
+	data_ptr += 4;
+
+	amf0_ret = amf0_process.rtmp_amf0_push_string(data_ptr,data_end-data_ptr,"onStatus");
+	data_ptr += amf0_ret;
+	//Number 0 
+	amf0_ret = amf0_process.rtmp_amf0_push_number(data_ptr,data_end-data_ptr,0);
+	data_ptr += amf0_ret;
+	//null
+	amf0_ret = amf0_process.rtmp_amf0_push_null(data_ptr,data_end-data_ptr);
+	data_ptr += amf0_ret;
+	//object header
+	amf0_ret = amf0_process.rtmp_amf0_push_object_header(data_ptr,data_end-data_ptr);
+	data_ptr += amf0_ret;
+	//object 子目录 
+	amf0_ret = amf0_process.rtmp_amf0_push_object_prop_name(data_ptr,data_end-data_ptr,"level");
+	data_ptr += amf0_ret;
+	//object 子目录 
+	amf0_ret = amf0_process.rtmp_amf0_push_string(data_ptr,data_end-data_ptr,"status");
+	data_ptr += amf0_ret;
+	//object 子目录 
+	amf0_ret = amf0_process.rtmp_amf0_push_object_prop_name(data_ptr,data_end-data_ptr,"code");
+	data_ptr += amf0_ret;
+	//object 子目录 
+	amf0_ret = amf0_process.rtmp_amf0_push_string(data_ptr,data_end-data_ptr,"NetStream.Publish.Start");
+	data_ptr += amf0_ret;
+	//object 子目录 
+	amf0_ret = amf0_process.rtmp_amf0_push_object_prop_name(data_ptr,data_end-data_ptr,"description");
+	data_ptr += amf0_ret;
+	//object 子目录
+	amf0_ret = amf0_process.rtmp_amf0_push_string(data_ptr,data_end-data_ptr,"Start publishing");
+	data_ptr += amf0_ret;
+	//object end
+	amf0_ret = amf0_process.rtmp_amf0_push_object_ender(data_ptr,data_end-data_ptr);
+	data_ptr += amf0_ret;
+
+	//添加message len
+	message_len = data_ptr - pag_buf - header_len;
+	message_len = SWAP_4BYTE(message_len);
+    memcpy( pag_buf + 4, ((char *)(&message_len)) + 1, 3 );
+
+	return data_ptr - pag_buf;
+}
+
 int app_test_server_rtmp::app_test_server_rtmp_onmetadata_result(app_test_rtmp_data_t * atud){
 	int message_len = 0;
 	int  amf0_ret = 0;
@@ -571,7 +636,7 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 	unsigned int chunk_header_len = 0;
 
 	if(message_len == 0){
-		return 1;
+		return 0;
 	}
 	//区分message类型
 	fmt = (message_buf[0]&0xc0) >> 6;
@@ -580,38 +645,114 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 		case 0:
 			chunk_header_len = 12;
 			if(message_len < chunk_header_len){
-				return 1;
+				return 0;
 			}
+			chunk_info_back.time_stamp = \
+							(((unsigned int)(message_buf[1]))<<16) + \
+							(((unsigned int)(message_buf[2]))<<8) + \
+							message_buf[3];
 			chunk_info_back.message_size = \
 							(((unsigned int)(message_buf[4]))<<16) + \
 							(((unsigned int)(message_buf[5]))<<8) + \
 							message_buf[6];
 			chunk_info_back.message_type = message_buf[7];
+			//扩展
+			if(chunk_info_back.time_stamp == 0xffffff){
+				 if(message_len < chunk_header_len + 5){
+                      return 1;
+                 }
+
+				chunk_info_back.time_stamp = \
+							(((unsigned int)(message_buf[12]))<<24) + \
+							(((unsigned int)(message_buf[13]))<<16) + \
+							(((unsigned int)(message_buf[14]))<<8) + \
+							message_buf[15];
+				chunk_header_len += 4;
+			}
+			//记录上一次timestamp
+			if(chunk_info_back.message_type == 0x08){
+				atud->rtmp_last_audio_timestamp = chunk_info_back.time_stamp;
+			}else if(chunk_info_back.message_type == 0x09){
+				atud->rtmp_last_video_timestamp = chunk_info_back.time_stamp;
+				user_log_printf("recv message_type:%u\n",atud->rtmp_last_video_timestamp);
+			}
 			break;
 		case 1:
 			chunk_header_len = 8;
 			if(message_len < chunk_header_len){
-				return 1;
+				return 0;
 			}
+			chunk_info_back.time_stamp = \
+							(((unsigned int)(message_buf[1]))<<16) + \
+							(((unsigned int)(message_buf[2]))<<8) + \
+							message_buf[3];
 			chunk_info_back.message_size = \
 							(((unsigned int)(message_buf[4]))<<16) + \
 							(((unsigned int)(message_buf[5]))<<8) + \
 							message_buf[6];
 			chunk_info_back.message_type = message_buf[7];
+			//扩展
+			if(chunk_info_back.time_stamp == 0xffffff){
+				 if(message_len < chunk_header_len + 5){
+                      return 1;
+                 }
+
+				chunk_info_back.time_stamp = \
+							(((unsigned int)(message_buf[8]))<<24) + \
+							(((unsigned int)(message_buf[9]))<<16) + \
+							(((unsigned int)(message_buf[10]))<<8) + \
+							message_buf[11];
+				chunk_header_len += 4;
+			}
+			//记录上一次timestamp
+			if(chunk_info_back.message_type == 0x08){
+				chunk_info_back.time_stamp += atud->rtmp_last_audio_timestamp;
+				atud->rtmp_last_audio_timestamp = chunk_info_back.time_stamp;
+			}else if(chunk_info_back.message_type == 0x09){
+				chunk_info_back.time_stamp += atud->rtmp_last_video_timestamp;
+				atud->rtmp_last_video_timestamp = chunk_info_back.time_stamp;
+				user_log_printf("recv message_type:%u\n",atud->rtmp_last_video_timestamp);
+			}
 			break;
 		case 2:
 			chunk_header_len = 4;
 			if(message_len < chunk_header_len){
-				return 1;
+				return 0;
+			}
+			chunk_info_back.time_stamp = \
+							(((unsigned int)(message_buf[1]))<<16) + \
+							(((unsigned int)(message_buf[2]))<<8) + \
+							message_buf[3];
+			//扩展
+			if(chunk_info_back.time_stamp == 0xffffff){
+				 if(message_len < chunk_header_len + 5){
+                      return 1;
+                 }
+
+				chunk_info_back.time_stamp = \
+							(((unsigned int)(message_buf[4]))<<24) + \
+							(((unsigned int)(message_buf[5]))<<16) + \
+							(((unsigned int)(message_buf[6]))<<8) + \
+							message_buf[7];
+				chunk_header_len += 4;
+			}
+			//记录上一次timestamp
+			if(chunk_info_back.message_type == 0x08){
+				chunk_info_back.time_stamp += atud->rtmp_last_audio_timestamp;
+				atud->rtmp_last_audio_timestamp = chunk_info_back.time_stamp;
+			}else if(chunk_info_back.message_type == 0x09){
+				chunk_info_back.time_stamp += atud->rtmp_last_video_timestamp;
+				atud->rtmp_last_video_timestamp = chunk_info_back.time_stamp;
 			}
 			break;
 		case 3:
 			chunk_header_len = 1;
 			if(message_len < chunk_header_len){
-				return 1;
+				return 0;
 			}
 			break;
 		default:
+			user_log_printf("recv fmt:%d is error\n",fmt);
 			return -1;
 	}
 	//chunk包分类
@@ -623,50 +764,70 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_message(app_test_rtmp_data
 	}
 
 	if(message_len < chunk_len + chunk_header_len){
-		return 1;
+		return 0;
 	}
 	//新包
 	if(is_new_pack){
-		atud->chunk_info[chunk_id].last_message_size = chunk_info_back.message_size;
-		atud->chunk_info[chunk_id].message_size = chunk_info_back.message_size;
-		atud->chunk_info[chunk_id].message_type = chunk_info_back.message_type;
-
 		if(atud->chunk_info[chunk_id].chunk_data){
 			delete atud->chunk_info[chunk_id].chunk_data;
 			atud->chunk_info[chunk_id].chunk_data = NULL;
 		}
+
+		if(chunk_info_back.message_size == 0){
+			user_log_printf("recv fmt:%d,message_len:%d,client is error\n",fmt,message_len);
+			atud->recv_data->message_block_rd_pos_add(message_len);
+			return 0;
+		}
+		atud->chunk_info[chunk_id].last_message_size = chunk_info_back.message_size;
+		atud->chunk_info[chunk_id].message_size = chunk_info_back.message_size;
+		atud->chunk_info[chunk_id].message_type = chunk_info_back.message_type;
+		atud->chunk_info[chunk_id].time_stamp = chunk_info_back.time_stamp;
 		atud->chunk_info[chunk_id].chunk_data = new message_block((chunk_info_back.message_size + 64*1024)/(64*1024)*(64*1024));
 	}
 	
 	atud->chunk_info[chunk_id].chunk_data->message_block_write(message_buf + chunk_header_len, chunk_len);
 	atud->recv_data->message_block_rd_pos_add(chunk_len + chunk_header_len);
 	atud->chunk_info[chunk_id].last_message_size -= chunk_len;
+
+	//清除buf消息块，偏移读指针到初始位置
+	atud->recv_data->message_block_truncate();
+
 	if(chunk_len == atud->chunk_info[chunk_id].message_size){
 		return app_test_server_rtmp_parser_process(atud,&atud->chunk_info[chunk_id]);
 	}else if(atud->chunk_info[chunk_id].chunk_data->message_block_get_data_len() < (int)atud->chunk_info[chunk_id].message_size){
-		return 1;
+		return 0;
 	}
-
 	return app_test_server_rtmp_parser_process(atud,&atud->chunk_info[chunk_id]);
 }
 
 int app_test_server_rtmp::app_test_server_rtmp_parser_process(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
 	int ret = 0;
 	unsigned char *messsge_data = info->chunk_data->message_block_get_rd_ptr();
-	user_log_printf("recv message_type:0x%x\n",info->message_type);
+	//user_log_printf("recv message_type:0x%x\n",info->message_type);
 	switch(info->message_type){
 		// Set Chunk Size (0x01)
 		case 0x01:
 			atud->client_chunk_size = (((unsigned int)(messsge_data[0]))<<24) + (((unsigned int)(messsge_data[1]))<<16)
 									+ (((unsigned int)(messsge_data[2]))<<8) + messsge_data[3];
 			break;
-		//User Control Message (0x04)
-		case 0x04:
-			
+		//Audio Data (0x08)
+		case 0x08:
+		//Video Data (0x09)
+		case 0x09:
+			if(atud->state == APP_TEST_SERVER_RTMP_FILE_RECV){
+				ret = app_test_server_rtmp_write_flv(atud,info);
+			}
+			break;
+		//AMF0 Data (0x12)
+		case 0x12:
+			if(atud->state == APP_TEST_SERVER_RTMP_FILE_RECV_START){
+				app_test_server_rtmp_parser_publish_dataframe(atud,info);
+				ret = app_test_server_rtmp_write_flv_framedata(atud);
+			}
 			break;
 		//AMF0 Command (0x14)
 		case 0x14:
-			ret = app_test_server_rtmp_parser_process_cmd(atud,info);
+			ret = app_test_server_rtmp_parser_process_cmd_14(atud,info);
 			break;
 		default:
 			break;
@@ -679,7 +840,7 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_process(app_test_rtmp_data
 	return ret;
 }
 
-int app_test_server_rtmp::app_test_server_rtmp_parser_process_cmd(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
+int app_test_server_rtmp::app_test_server_rtmp_parser_process_cmd_14(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
 	char command_name[256]={0};
 	int ret = amf0_process.rtmp_amf0_pop_string(command_name,sizeof(command_name)\
 		,info->chunk_data->message_block_get_rd_ptr(),info->chunk_data->message_block_get_data_len());
@@ -690,21 +851,25 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_process_cmd(app_test_rtmp_
 	switch(atud->state){
 		case APP_TEST_SERVER_RTMP_WAIT_CONNECT:
 			if(strcmp(command_name,"connect") == 0){
-				user_log_printf("start parser\n");
 				app_test_server_rtmp_parser_connect(atud,info);
-				user_log_printf("start connect result\n");
 				return app_test_server_rtmp_connect(atud);
 			}
 			break;
 		case APP_TEST_SERVER_RTMP_WAIT_CREATESTREAM:
 			if(strcmp(command_name,"createStream") == 0){
+				app_test_server_rtmp_parser_createstream(atud,info);
 				return app_test_server_rtmp_create_stream(atud);
 			}
 			break;
 		case APP_TEST_SERVER_RTMP_WAIT_PLAY:
+			//请求播放
 			if(strcmp(command_name,"play") == 0){
 				app_test_server_rtmp_parser_play(atud,info);
 				return app_test_server_rtmp_play(atud);
+			//上传文件
+			}else if(strcmp(command_name,"publish") == 0){
+				app_test_server_rtmp_parser_publish(atud,info);
+				return app_test_server_rtmp_publish(atud);
 			}
 			break;
 		case APP_TEST_SERVER_RTMP_FILE_SEND:
@@ -739,7 +904,6 @@ Object (8 items)
 */
 int app_test_server_rtmp::app_test_server_rtmp_parser_connect(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
 	int ret = 0;
-	double trans_id = 0.0;
 	char command_name[256]={0};
 	char prop_name[32] = {0};
 	char prop_value[256] = {0};
@@ -753,7 +917,7 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_connect(app_test_rtmp_data
 	messsge_data += ret;
 	data_len -= ret;
 
-	ret = amf0_process.rtmp_amf0_pop_number(&trans_id, messsge_data, data_len );
+	ret = amf0_process.rtmp_amf0_pop_number(&now_trans_id, messsge_data, data_len );
     if( ret < 0 ){
         return -1;
 	}
@@ -788,6 +952,28 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_connect(app_test_rtmp_data
 	}
 	return 0;
 }
+int app_test_server_rtmp::app_test_server_rtmp_parser_createstream(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
+	int ret = 0;
+	char command_name[256]={0};
+	unsigned char *messsge_data = info->chunk_data->message_block_get_rd_ptr();
+	int data_len = info->chunk_data->message_block_get_data_len();
+	
+	ret = amf0_process.rtmp_amf0_pop_string(command_name,sizeof(command_name),messsge_data,data_len);
+	if(ret < 0){
+		return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+
+	ret = amf0_process.rtmp_amf0_pop_number(&now_trans_id, messsge_data, data_len);
+    if( ret < 0 ){
+        return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+	return 0;
+}
+
 /*
 String 'play'
     AMF0 type: String (0x02)
@@ -808,7 +994,6 @@ Number -2000
 */
 int app_test_server_rtmp::app_test_server_rtmp_parser_play(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
 	int ret = 0;
-	double trans_id = 0.0;
 	char command_name[256]={0};
 	char prop_value[256] = {0};
 	unsigned char *messsge_data = info->chunk_data->message_block_get_rd_ptr();
@@ -821,7 +1006,58 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_play(app_test_rtmp_data_t 
 	messsge_data += ret;
 	data_len -= ret;
 
-	ret = amf0_process.rtmp_amf0_pop_number(&trans_id, messsge_data, data_len);
+	ret = amf0_process.rtmp_amf0_pop_number(&now_trans_id, messsge_data, data_len);
+    if( ret < 0 ){
+        return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+
+	ret = amf0_process.rtmp_amf0_pop_null(messsge_data, data_len);
+    if( ret < 0 ){
+        return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+
+	ret = amf0_process.rtmp_amf0_pop_string(prop_value,sizeof(prop_value),messsge_data,data_len);
+	if(ret < 0){
+		return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+
+	rtmp_stream.clear();
+	rtmp_stream.append(prop_value);
+	user_log_printf("rtmp_stream:%s\n",prop_value);
+	return 0;
+}
+/*
+    String 'publish'
+    Number 5
+    Null
+    String '2222'
+    String 'live'
+*/
+int app_test_server_rtmp::app_test_server_rtmp_parser_publish(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
+	int ret = 0;
+	char command_name[256]={0};
+	char prop_value[256] = {0};
+	unsigned char *messsge_data = info->chunk_data->message_block_get_rd_ptr();
+	int data_len = info->chunk_data->message_block_get_data_len();
+	
+	ret = amf0_process.rtmp_amf0_pop_string(command_name,sizeof(command_name),messsge_data,data_len);
+	if(ret < 0){
+		return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+
+	if(strcmp(command_name,"publish") != 0){
+		return 0;
+	}
+
+	ret = amf0_process.rtmp_amf0_pop_number(&now_trans_id, messsge_data, data_len);
     if( ret < 0 ){
         return -1;
 	}
@@ -848,6 +1084,35 @@ int app_test_server_rtmp::app_test_server_rtmp_parser_play(app_test_rtmp_data_t 
 	return 0;
 }
 
+int app_test_server_rtmp::app_test_server_rtmp_parser_publish_dataframe(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
+	unsigned char *messsge_data = info->chunk_data->message_block_get_rd_ptr();
+	int data_len = info->chunk_data->message_block_get_data_len();
+	
+	char command_name[256]={0};
+	int ret = 0;
+
+	ret = amf0_process.rtmp_amf0_pop_string(command_name,sizeof(command_name),messsge_data,data_len);
+	if(ret < 0){
+		return -1;
+	}
+	messsge_data += ret;
+	data_len -= ret;
+
+	if(strcmp(command_name,"@setDataFrame") != 0){
+		return -1;
+	}
+	atud->flv_info_len = data_len;
+	memcpy(atud->flv_info,messsge_data,data_len);
+
+	return 0;
+}
+
+
+
+/***************************************************************
+//处理rtmp信令
+//
+***************************************************************/
 int app_test_server_rtmp::app_test_server_rtmp_connect(app_test_rtmp_data_t * atud){
 	user_log_printf("start connect\n");
 	char buf[1024] = {0};
@@ -898,6 +1163,21 @@ int app_test_server_rtmp::app_test_server_rtmp_create_stream(app_test_rtmp_data_
 	return app_test_server_rtmp_check_send(atud);
 }
 
+int app_test_server_rtmp::app_test_server_rtmp_publish(app_test_rtmp_data_t * atud){
+	user_log_printf("start publsih\n");
+	char buf[1024] = {0};
+	int  ret_len = 0;
+	
+	ret_len = app_test_server_rtmp_publish_result(buf,sizeof(buf));
+	if(ret_len == -1){
+		return -1;
+	}
+	atud->send_data->message_block_write(buf,ret_len);
+
+	atud->state = APP_TEST_SERVER_RTMP_FILE_RECV_START;
+	return app_test_server_rtmp_check_send(atud);
+}
+
 int app_test_server_rtmp::app_test_server_rtmp_play(app_test_rtmp_data_t * atud){
 	user_log_printf("start play\n");
 	char buf[2048] = {0};
@@ -938,11 +1218,6 @@ int app_test_server_rtmp::app_test_server_rtmp_play(app_test_rtmp_data_t * atud)
 	return 0;
 }
 
-
-/***************************************************************
-//处理rtmp信令
-//
-***************************************************************/
 int app_test_server_rtmp::app_test_server_rtmp_s0s1s2(app_test_rtmp_data_t *atud){
 	const int s0s1_len = 1537;
 	const int s2_len = 1536;
@@ -957,6 +1232,7 @@ int app_test_server_rtmp::app_test_server_rtmp_s0s1s2(app_test_rtmp_data_t *atud
 	atud->send_data->message_block_write(s0s1s2,s0s1_len + s2_len);
 	app_test_server_rtmp_check_send(atud);
 	atud->state = APP_TEST_SERVER_RTMP_WAIT_C2;
+	atud->recv_data->message_block_rd_pos_add(1537);
 	return 0;
 }
 /***************************************************************
@@ -1226,7 +1502,68 @@ int app_test_server_rtmp::app_test_server_rtmp_onmetadata(app_test_rtmp_data_t *
 	return 0;
 }
 
+int app_test_server_rtmp::app_test_server_rtmp_write_flv_framedata(app_test_rtmp_data_t * atud){
+	static const char flvHeader[] = { 'F', 'L', 'V', 0x01,0x05,0x00, 0x00, 0x00, 0x09,0x00, 0x00, 0x00, 0x00};
+	char metadata_header[11] = {0};
+	char tag_size_ptr[4] = {0};
+	string rtmp_connect_path;
+	int tag_size = 0;
+	int message_len = atud->flv_info_len;
 
+	rtmp_connect_path.append(content_path);
+	rtmp_connect_path.append(rtmp_stream.c_str());
+	rtmp_connect_path.append(".flv");
+
+	user_log_printf("open flv:%s\n",rtmp_connect_path.c_str());
+	atud->file_id = file_open(rtmp_connect_path.c_str(), O_CREAT|O_RDWR, FILE_PERMS_ALL,NULL);
+	if(atud->file_id == INVALID_HANDLE_VALUE){
+		user_log_printf("flv error\n");
+		return -1;
+	}
+	//flv header
+	file_write(atud->file_id,flvHeader,sizeof(flvHeader));
+	//metadate header
+	metadata_header[0] = 0x12;
+	message_len = SWAP_4BYTE(message_len);
+	memcpy( metadata_header + 1, ((char *)(&message_len)) + 1, 3);
+	file_write(atud->file_id,metadata_header,sizeof(metadata_header));
+	//metadata body
+	file_write(atud->file_id,atud->flv_info,atud->flv_info_len);
+	//tag size
+	tag_size = atud->flv_info_len + 11;
+	tag_size = SWAP_4BYTE(tag_size);
+	memcpy(tag_size_ptr ,((char *)(&tag_size)), 4);
+	file_write(atud->file_id,tag_size_ptr,sizeof(tag_size_ptr));
+
+	atud->state = APP_TEST_SERVER_RTMP_FILE_RECV;
+	return 0;
+}
+
+int app_test_server_rtmp::app_test_server_rtmp_write_flv(app_test_rtmp_data_t * atud,rtmp_chunk_info_t * info){
+	char tag_header[11] = {0};
+	char tag_size_ptr[4] = {0};
+	int tag_size = 0;
+	int message_len = info->chunk_data->message_block_get_data_len();
+	unsigned int time_stamp = info->time_stamp;
+
+	tag_header[0] = info->message_type;
+
+	message_len = SWAP_4BYTE(message_len);
+	memcpy(tag_header + 1, ((char *)(&message_len)) + 1, 3);
+	
+	time_stamp = SWAP_4BYTE(time_stamp);
+	memcpy(tag_header + 4, ((char *)(&time_stamp)) + 1, 3);
+	//header
+	file_write(atud->file_id,tag_header,sizeof(tag_header));
+	//body
+	file_write(atud->file_id,info->chunk_data->message_block_get_rd_ptr(),info->chunk_data->message_block_get_data_len());
+	//tag size
+	tag_size = info->chunk_data->message_block_get_data_len() + 11;
+	tag_size = SWAP_4BYTE(tag_size);
+	memcpy(tag_size_ptr ,((char *)(&tag_size)), 4);
+	file_write(atud->file_id,tag_size_ptr,sizeof(tag_size_ptr));
+	return 0;
+}
 
 /***************************************************************
 //数据处理回调
@@ -1258,8 +1595,6 @@ void app_test_server_rtmp::app_test_server_rtmp_event_cb(struct event_connection
 	if(atud->state == APP_TEST_SERVER_RTMP_WAIT_C0C1){
 		if(atud->rtmp->app_test_server_rtmp_s0s1s2(atud) < 0){
 			atud->state = APP_TEST_SERVER_RTMP_ERROR;
-		}else{
-			atud->recv_data->message_block_rd_pos_add(1537);
 		}
 	}
 	//rtmp c2协议头 1536字节
@@ -1272,26 +1607,28 @@ void app_test_server_rtmp::app_test_server_rtmp_event_cb(struct event_connection
 	//rtmp 处理消息
 	if(atud->state == APP_TEST_SERVER_RTMP_WAIT_CONNECT ||\
 		atud->state == APP_TEST_SERVER_RTMP_WAIT_CREATESTREAM||\
-		atud->state == APP_TEST_SERVER_RTMP_WAIT_PLAY){
+		atud->state == APP_TEST_SERVER_RTMP_WAIT_PLAY ||\
+		atud->state == APP_TEST_SERVER_RTMP_FILE_RECV ||\
+		atud->state == APP_TEST_SERVER_RTMP_FILE_RECV_START){
 		if(atud->rtmp->app_test_server_rtmp_parser_message(atud) < 0){
 			atud->state = APP_TEST_SERVER_RTMP_ERROR;
 		}
 	}
-
+	//rtmp 开始发送文件
 	if(atud->state == APP_TEST_SERVER_RTMP_FILE_START){
 		if(atud->rtmp->app_test_server_rtmp_onmetadata(atud) < 0){
 			atud->state = APP_TEST_SERVER_RTMP_ERROR;
 		}
 	}
-
+	//rtmp 发送消息
 	if(atud->state == APP_TEST_SERVER_RTMP_FILE_SEND){
 		if(atud->rtmp->app_test_server_rtmp_process_data(atud) < 0){
 			atud->state = APP_TEST_SERVER_RTMP_ERROR;
 		}
 	}
-	
 	//请求结束
-	if(atud->state == APP_TEST_SERVER_RTMP_ERROR || atud->state == APP_TEST_SERVER_RTMP_FILE_END){
+	if(atud->state == APP_TEST_SERVER_RTMP_ERROR ||\
+		atud->state == APP_TEST_SERVER_RTMP_FILE_END){
 		atud->rtmp->app_test_server_rtmp_clean(atud);
 	}
 }
